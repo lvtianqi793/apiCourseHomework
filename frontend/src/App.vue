@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { useAuthStore } from './stores/auth'
@@ -7,10 +7,21 @@ import { useAuthStore } from './stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 const isLoggedIn = computed(() => authStore.isLoggedIn)
+const searchQuery = ref('')
 
 function logout() {
   authStore.logout()
   router.push('/login')
+}
+
+function doSearch() {
+  const q = searchQuery.value.trim()
+  if (!q) return
+  router.push({ path: '/search', query: { q } })
+}
+
+function onSearchKey(e) {
+  if (e.key === 'Enter') doSearch()
 }
 </script>
 
@@ -33,7 +44,7 @@ function logout() {
           <strong>发布</strong>
         </RouterLink>
 
-        <RouterLink v-if="isLoggedIn" class="side-link" to="/my/videos">
+        <RouterLink v-if="isLoggedIn" class="side-link" to="/my">
           <span>◉</span>
           <strong>我的</strong>
         </RouterLink>
@@ -57,19 +68,26 @@ function logout() {
 
     <header class="top-bar">
       <div class="search-shell">
-        <span>搜索你感兴趣的内容</span>
-        <strong>⌕ 搜索</strong>
+        <input
+          v-model="searchQuery"
+          class="search-input"
+          placeholder="搜索你感兴趣的内容"
+          @keydown="onSearchKey"
+          aria-label="搜索"
+        />
+        <button class="search-btn" type="button" @click="doSearch">⌕ 搜索</button>
       </div>
 
       <nav class="top-actions">
         <RouterLink v-if="isLoggedIn" to="/publish">投稿</RouterLink>
-        <RouterLink v-if="isLoggedIn" to="/my/videos">作品</RouterLink>
+        <RouterLink v-if="isLoggedIn" to="/my">作品</RouterLink>
         <button v-if="isLoggedIn" class="link-button" type="button" @click="logout">
           退出
         </button>
         <RouterLink v-if="!isLoggedIn" to="/login">登录</RouterLink>
         <RouterLink v-if="!isLoggedIn" to="/register">注册</RouterLink>
-        <span class="avatar">{{ authStore.user?.username?.slice(0, 1) || 'V' }}</span>
+        <RouterLink v-if="isLoggedIn" class="avatar" to="/my">{{ authStore.user?.username?.slice(0, 1) || 'V' }}</RouterLink>
+        <span v-else class="avatar">V</span>
       </nav>
     </header>
 

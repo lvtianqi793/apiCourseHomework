@@ -1,69 +1,46 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { listMyFavorites, listMyVideos } from '../api/videos'
+import { useAuthStore } from '../stores/auth'
+import { formatCount } from '../utils/format'
 
-import VideoCard from '../components/VideoCard.vue'
-import { deleteMyVideo, listMyVideos } from '../api/videos'
-
-const videos = ref([])
-const page = ref(1)
-const pageSize = ref(6)
-const total = ref(0)
+const router = useRouter()
+const authStore = useAuthStore()
+const myVideos = ref([])
+const myFavorites = ref([])
+const myTotal = ref(0)
+const favTotal = ref(0)
 const loading = ref(false)
-const deletingId = ref(null)
-const error = ref('')
 
-onMounted(() => {
-  loadVideos()
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  const name = authStore.user?.username || ''
+  const prefix = hour < 12 ? '上午好' : hour < 18 ? '下午好' : '晚上好'
+  return `${prefix}，${name}`
 })
 
-async function loadVideos() {
+onMounted(async () => {
   loading.value = true
-  error.value = ''
-
   try {
-    const response = await listMyVideos({
-      page: page.value,
-      page_size: pageSize.value
-    })
-    const result = response.data.data
-    videos.value = result.items
-    total.value = result.total
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    loading.value = false
-  }
-}
+    const [worksRes, favsRes] = await Promise.all([
+      listMyVideos({ page: 1, page_size: 3 }),
+      listMyFavorites({ page: 1, page_size: 3 }),
+    ])
+    const works = worksRes.data.data
+    myVideos.value = works.items
+    myTotal.value = works.total
 
-async function removeVideo(video) {
-  if (!confirm(`确认删除《${video.title}》吗？本地视频文件也会被删除。`)) {
-    return
-  }
+    const favs = favsRes.data.data
+    myFavorites.value = favs.items
+    favTotal.value = favs.total
+  } catch (_) {}
+  loading.value = false
+})
 
-  deletingId.value = video.id
-  error.value = ''
-
-  try {
-    await deleteMyVideo(video.id)
-    if (videos.value.length === 1 && page.value > 1) {
-      page.value -= 1
-    }
-    await loadVideos()
-  } catch (err) {
-    error.value = err.message
-  } finally {
-    deletingId.value = null
-  }
-}
-
-function totalPages() {
-  return Math.max(1, Math.ceil(total.value / pageSize.value))
-}
-
-function changePage(nextPage) {
-  if (nextPage < 1 || nextPage > totalPages()) return
-  page.value = nextPage
-  loadVideos()
+function goToVideo(video) {
+  const uuid = video.video_url.split('/').pop().replace(/\.mp4$/i, '')
+  router.push(`/recommend/${uuid}`)
 }
 </script>
 
@@ -71,36 +48,66 @@ function changePage(nextPage) {
   <section class="list-page">
     <div class="page-heading">
       <div>
-        <p class="eyebrow">作品管理</p>
-        <h1>我的作品</h1>
-        <p class="muted">共 {{ total }} 个作品，删除时会同步移除本地视频文件。</p>
+        <p class="eyebrow">个人中心</p>
+        <h1>{{ greeting }}</h1>
       </div>
       <RouterLink class="primary-button small" to="/publish">发布作品</RouterLink>
     </div>
 
-    <p v-if="error" class="error-text">{{ error }}</p>
     <p v-if="loading" class="muted">加载中...</p>
 
-    <div v-else-if="videos.length" class="video-grid">
-      <VideoCard
-        v-for="video in videos"
-        :key="video.id"
-        :video="video"
-        :deleting="deletingId === video.id"
-        @delete="removeVideo(video)"
-      />
-    </div>
+    <template v-else>
+      <!-- My Works section -->
+      <div class="my-section">
+        <div class="my-section-header">
+          <h2>我的作品 <span class="muted" style="font-size:15px;font-weight:400">共 {{ myTotal }} 个</span></h2>
+          <RouterLink class="primary-button small" to="/my/works">查看全部</RouterLink>
+        </div>
+        <div v-if="myVideos.length" class="video-grid">
+          <article v-for="v in myVideos" :key="v.id" class="video-card" style="cursor:pointer" @click="goToVideo(v)">
+            <video class="card-video" :src="v.video_url" preload="metadata" @click.stop />
+            <div class="card-body">
+              <h3>{{ v.title }}</h3>
+              <p>{{ v.description || '未填写简介' }}</p>
+              <div class="card-meta">
+                <span>浏览 {{ formatCount(v.view_count) }}</span>
+                <span>点赞 {{ formatCount(v.like_count) }}</span>
+                <span>收藏 {{ formatCount(v.favorite_count) }}</span>
+                <span>{{ v.created_at }}</span>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="empty-state">
+          <p>暂无作品，<RouterLink to="/publish">去发布</RouterLink></p>
+        </div>
+      </div>
 
-    <div v-else class="empty-state">
-      <h2>暂无作品</h2>
-      <p>发布后会在这里统一管理。</p>
-      <RouterLink class="primary-button small" to="/publish">发布作品</RouterLink>
-    </div>
-
-    <div class="pagination" v-if="totalPages() > 1">
-      <button type="button" :disabled="page === 1" @click="changePage(page - 1)">上一页</button>
-      <span>第 {{ page }} / {{ totalPages() }} 页</span>
-      <button type="button" :disabled="page === totalPages()" @click="changePage(page + 1)">下一页</button>
-    </div>
+      <!-- Favorites section -->
+      <div class="my-section">
+        <div class="my-section-header">
+          <h2>收藏 <span class="muted" style="font-size:15px;font-weight:400">共 {{ favTotal }} 个</span></h2>
+          <RouterLink class="primary-button small" to="/my/favorites">查看全部</RouterLink>
+        </div>
+        <div v-if="myFavorites.length" class="video-grid">
+          <article v-for="v in myFavorites" :key="v.id" class="video-card" style="cursor:pointer" @click="goToVideo(v)">
+            <video class="card-video" :src="v.video_url" preload="metadata" @click.stop />
+            <div class="card-body">
+              <h3>{{ v.title }}</h3>
+              <p>{{ v.description || '未填写简介' }}</p>
+              <div class="card-meta">
+                <span>浏览 {{ formatCount(v.view_count) }}</span>
+                <span>点赞 {{ formatCount(v.like_count) }}</span>
+                <span>收藏 {{ formatCount(v.favorite_count) }}</span>
+                <span>{{ v.created_at }}</span>
+              </div>
+            </div>
+          </article>
+        </div>
+        <div v-else class="empty-state">
+          <p>暂无收藏，去推荐页收藏喜欢的视频吧。</p>
+        </div>
+      </div>
+    </template>
   </section>
 </template>
