@@ -1,11 +1,11 @@
 # 简易视频流推荐系统
 
-这是一个"简易版抖音"课程大作业项目，包含 Vue 前端、Rust 轻量后端和 MySQL 数据库。
+这是一个"简易版抖音"课程大作业项目，包含 Vue 前端、Spring Boot 后端和 MySQL 数据库。
 
 ## 技术栈
 
 - 前端：Vue 3、Vite、Pinia、Vue Router、Axios
-- 后端：Rust、Axum、SQLx、Tokio
+- 后端：Java 21、Spring Boot 3、Spring Web MVC、JdbcTemplate、JJWT、Argon2
 - 数据库：MySQL
 - 鉴权：JWT
 - 视频存储：后端本地目录 `backend/uploads/videos`
@@ -179,7 +179,7 @@ score = (view_count × 1 + like_count × 3 + favorite_count × 5)
 ### 全局时间统一为 UTC+8
 
 - 后端所有时间字段（视频发布时间、评论发布时间等）统一转换为 UTC+8（北京时间）后返回前端
-- 涉及 `VideoRow` 和 `CommentRow` 的 `created_at` 字段，均在序列化前加 8 小时
+- 涉及 `VideoDto` 和 `CommentDto` 的 `created_at` 字段，均在序列化前加 8 小时
 
 ### "我的"页面视频点击跳转
 
@@ -234,10 +234,9 @@ score = (view_count × 1 + like_count × 3 + favorite_count × 5)
 
 | 迁移文件 | 变更内容 |
 | --- | --- |
-| `backend/migrations/001_init.sql` | 原有：users / videos / video_likes / video_views / request_logs |
-| `backend/migrations/002_social.sql` | 新增：video_comments / video_favorites / video_danmaku |
-| `backend/migrations/003_share_count.sql` | 新增：`videos.share_count BIGINT NOT NULL DEFAULT 0` |
-| `backend/migrations/004_view_count.sql` | 新增：`videos.view_count BIGINT NOT NULL DEFAULT 0` |
+| `backend/migrations/001_init.sql` | 初始化：users / videos / video_likes / video_views / request_logs，并条件性添加 share_count、view_count |
+| `backend/migrations/002_add_view_share_count.sql` | 为旧库补充：`videos.share_count`、`videos.view_count` |
+| `backend/migrations/003_social_tables.sql` | 新增：video_comments / video_favorites / video_danmaku |
 
 ---
 
@@ -246,41 +245,74 @@ score = (view_count × 1 + like_count × 3 + favorite_count × 5)
 ```text
 code/
   backend/
+    pom.xml
+    .env.example
     migrations/
       001_init.sql
-      002_social.sql
-      003_share_count.sql           # 新增：share_count 列
-      004_view_count.sql            # 新增：view_count 列
-    src/
-      modules/videos/
-        handlers.rs                 # 新增：update_my_video / list_my_favorites /
-        │                           #        increment_share / record_video_view
-        models.rs                   # 新增：UpdateVideoBody / favorite_count /
-        │                           #        share_count / view_count 字段
-        mod.rs                      # 新增路由：PATCH /my/videos/:id /
-                                    #           GET /my/favorites /
-                                    #           POST /videos/:id/share
+      002_add_view_share_count.sql
+      003_social_tables.sql
+    uploads/videos/
+    src/main/java/com/videoflow/
+      VideoFlowApplication.java
+      config/
+        AppProperties.java
+        DotEnvLoader.java
+        WebConfig.java
+      controller/
+        AuthController.java
+        VideoController.java
+        MyController.java
+        UserController.java
+        SearchController.java
+      service/
+        AuthService.java
+        VideoService.java
+      security/
+        JwtService.java
+        PasswordService.java
+      filter/
+        JwtAuthFilter.java
+        RequestLoggingFilter.java
+      dto/
+        VideoDto.java
+        CommentDto.java
+        DanmakuDto.java
+        AuthDtos.java
+      mapper/
+        RowMappers.java
+      exception/
+        AppException.java
+        GlobalExceptionHandler.java
+      util/
+        ApiResponse.java
+    src/main/resources/
+      application.yml
   frontend/
     src/
       api/
-        videos.js                   # 新增：updateMyVideo / listMyFavorites /
-                                    #        incrementShare
+        auth.js
+        videos.js
+        http.js
       router/
-        index.js                    # 新增：/my / /my/works / /my/favorites
+        index.js
       utils/
-        format.js                   # 新增：formatCount（千 / 万 格式化）
+        format.js
       views/
-        MyVideosView.vue            # 重构：仪表盘，显示两个分区各 3 条预览
-                                    #        标题改为时段问候
-        MyWorksPage.vue             # 新增：作品管理子页（含编辑 / 删除）
-        MyFavoritesPage.vue         # 新增：收藏子页（只读）
-        RecommendView.vue           # 更新：收藏数 / 分享数展示 / 滑动切换动画
-        SearchView.vue              # 新增：搜索结果页（用户 + 视频）
+        MyVideosView.vue
+        MyWorksPage.vue
+        MyFavoritesPage.vue
+        RecommendView.vue
+        SearchView.vue
+        PublishVideoView.vue
+        LoginView.vue
+        RegisterView.vue
+        UserProfileView.vue
       components/
-        VideoCard.vue               # 重构：⋯ 下拉菜单 + 编辑弹窗 + 删除弹窗
-                                    #        统计栏改为浏览 / 点赞 / 收藏
-      styles.css                    # 新增：card-menu / modal / my-section /
-                                    #        slide-up / slide-down / search 样式
+        VideoCard.vue
+        VideoPlayer.vue
+        CommentPanel.vue
+        LikeButton.vue
+      styles.css
 ```
 
 ---
@@ -288,14 +320,15 @@ code/
 ## 数据库初始化
 
 1. 启动 MySQL。
-2. 依次执行四个迁移文件：
+2. 依次执行迁移文件：
 
 ```bash
 mysql -u root -p < backend/migrations/001_init.sql
-mysql -u root -p < backend/migrations/002_social.sql
-mysql -u root -p < backend/migrations/003_share_count.sql
-mysql -u root -p < backend/migrations/004_view_count.sql
+mysql -u root -p < backend/migrations/002_add_view_share_count.sql
+mysql -u root -p < backend/migrations/003_social_tables.sql
 ```
+
+> 若是全新安装，执行 `001_init.sql` 后通常已包含全部表结构；`002`、`003` 用于兼容旧版数据库补全字段和表。
 
 3. 复制后端环境变量：
 
@@ -304,12 +337,15 @@ cd backend
 cp .env.example .env
 ```
 
-4. 修改 `backend/.env` 中的数据库密码：
+4. 修改 `backend/.env` 中的数据库配置：
 
 ```env
-DATABASE_URL=mysql://root:password@localhost:3306/video_flow
-JWT_SECRET=please-change-this-secret
-SERVER_ADDR=0.0.0.0:8080
+DATABASE_URL=jdbc:mysql://localhost:3306/video_flow?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+DATABASE_USERNAME=root
+DATABASE_PASSWORD=你的密码
+JWT_SECRET=video-flow-dev-secret-key-2026
+SERVER_PORT=8080
+SERVER_ADDR=0.0.0.0
 FRONTEND_ORIGIN=http://localhost:5173
 PUBLIC_BASE_URL=http://localhost:8080
 UPLOAD_DIR=uploads/videos
@@ -318,10 +354,14 @@ MAX_VIDEO_SIZE_MB=500
 
 ## 启动后端
 
+前置条件：Java 21、Maven。
+
 ```bash
 cd backend
-cargo run
+mvn spring-boot:run
 ```
+
+后端启动时会自动读取 `backend/.env` 中的环境变量。
 
 后端启动后：
 
@@ -333,6 +373,7 @@ cargo run
 ```bash
 cd frontend
 npm install
+cp .env.example .env
 npm run dev
 ```
 

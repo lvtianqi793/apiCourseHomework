@@ -1,0 +1,25 @@
+server:
+  port: ${SERVER_PORT:8080}
+  address: ${SERVER_ADDR:0.0.0.0}
+  tomcat:
+    max-http-form-post-size: -1
+    max-swallow-size: -1
+
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/video_flow?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DATABASE_USERNAME:root}
+    password: ${DATABASE_PASSWORD:password}
+    hikari:
+      maximum-pool-size: 10
+  servlet:
+    multipart:
+      max-file-size: ${MAX_VIDEO_SIZE_MB:500}MB
+      max-request-size: ${MAX_VIDEO_SIZE_MB:500}MB
+
+app:
+  jwt-secret: ${JWT_SECRET:please-change-this-secret}
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  upload-dir: ${UPLOAD_DIR:uploads/videos}
+  max-video-size-mb: ${MAX_VIDEO_SIZE_MB:500}

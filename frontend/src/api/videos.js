@@ -23,7 +23,6 @@ export function unlikeVideo(videoId) {
 export function publishVideo(formData, onUploadProgress) {
   return http.post('/my/videos', formData, {
     timeout: 0,
-    headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress
   })
 }
